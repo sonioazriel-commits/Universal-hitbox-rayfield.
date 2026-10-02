@@ -1,0 +1,520 @@
+-- ============================================
+-- Universal Hitbox Rayfield
+-- by iamsad369l
+-- ============================================
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
+-- SERVICES
+local Players     = game:GetService("Players")
+local RunService  = game:GetService("RunService")
+local UIS         = game:GetService("UserInputService")
+local SoundService= game:GetService("SoundService")
+local LocalPlayer = Players.LocalPlayer
+local Camera      = workspace.CurrentCamera
+
+-- SOUNDS
+local ClickSound = Instance.new("Sound")
+ClickSound.SoundId = "rbxassetid://9125402735"
+ClickSound.Volume = 0.35
+ClickSound.Parent = SoundService
+
+local ToggleSound = Instance.new("Sound")
+ToggleSound.SoundId = "rbxassetid://6042053626"
+ToggleSound.Volume = 0.35
+ToggleSound.Parent = SoundService
+
+local function playClick() ClickSound:Play() end
+local function playToggle() ToggleSound:Play() end
+
+-- STATE
+getgenv().HBE = false
+
+local Config = {
+    Size            = Vector3.new(15, 15, 15),
+    Color           = Color3.fromRGB(255, 0, 0),
+    Transparency    = 0.5,
+    CanCollide      = false,
+    TeamCheck       = false,
+    ESP             = false,
+    ESPColor        = Color3.fromRGB(0, 200, 255),
+    ESPClosestOnly  = false,
+    ESPRange        = 500,
+    SpeedEnabled    = false,
+    WalkSpeed       = 16,
+    Noclip          = false,
+    InfJump         = false,
+}
+
+-- ============================================
+-- UI
+-- ============================================
+local Window = Rayfield:CreateWindow({
+    Name = "Universal Hitbox Rayfield",
+    LoadingTitle = "Loading Universal Hitbox...",
+    LoadingSubtitle = "by iamsad369l",
+    ConfigurationSaving = {
+        Enabled = true,
+        FolderName = "UniversalHitbox",
+        FileName = "config"
+    },
+    KeySystem = false,
+})
+
+local MainTab    = Window:CreateTab("Hitbox", 4483362458)
+local ESPTab     = Window:CreateTab("ESP", 4483362458)
+local SpeedTab   = Window:CreateTab("Speed", 4483362458)
+local MoveTab    = Window:CreateTab("Movement", 4483362458)
+local ProfileTab = Window:CreateTab("Profile", 4483362458)
+local InfoTab    = Window:CreateTab("Info", 4483362458)
+
+-- ============================================
+-- CHARACTER PARENT
+-- ============================================
+local CHAR_PARENT = nil
+
+local function GetCharParent()
+    local charParent
+    local waited = 0
+    repeat
+        task.wait(0.1)
+        waited = waited + 0.1
+    until LocalPlayer.Character or waited > 10
+    if not LocalPlayer.Character then return nil end
+    for _, char in pairs(workspace:GetDescendants()) do
+        if string.find(char.Name, LocalPlayer.Name) and char:FindFirstChild("Humanoid") then
+            charParent = char.Parent
+            break
+        end
+    end
+    return charParent
+end
+
+task.spawn(function()
+    CHAR_PARENT = GetCharParent()
+end)
+
+-- ============================================
+-- HITBOX
+-- ============================================
+local hitboxConnections = {}
+
+local function resetHitbox(char)
+    if not char then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if hrp then
+        hrp.Size = Vector3.new(2, 2, 1)
+        hrp.Transparency = 1
+        hrp.CanCollide = true
+        hrp.Color = Color3.fromRGB(255, 255, 0)
+    end
+end
+
+local function AssignHitbox(player)
+    if player == LocalPlayer then return end
+    if hitboxConnections[player] then return end
+
+    local conn
+    conn = RunService.RenderStepped:Connect(function()
+        if not CHAR_PARENT then return end
+        local char = CHAR_PARENT:FindFirstChild(player.Name)
+        if not char then return end
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if not hrp then return end
+
+        if Config.TeamCheck and player.Team == LocalPlayer.Team then
+            resetHitbox(char)
+            return
+        end
+
+        if getgenv().HBE then
+            hrp.Size = Config.Size
+            hrp.Color = Config.Color
+            hrp.Transparency = Config.Transparency
+            hrp.CanCollide = Config.CanCollide
+        else
+            if hrp.Size ~= Vector3.new(2, 2, 1) or hrp.Transparency ~= 1 then
+                resetHitbox(char)
+            end
+        end
+    end)
+    hitboxConnections[player] = conn
+end
+
+for _, player in ipairs(Players:GetPlayers()) do
+    AssignHitbox(player)
+end
+Players.PlayerAdded:Connect(AssignHitbox)
+
+-- ============================================
+-- ESP HELPERS
+-- ============================================
+local function getClosestPlayer()
+    local myChar = LocalPlayer.Character
+    if not myChar then return nil end
+    local myHrp = myChar:FindFirstChild("HumanoidRootPart")
+    if not myHrp then return nil end
+
+    local closest, closestDist = nil, Config.ESPRange
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer and p.Character then
+            local hrp = p.Character:FindFirstChild("HumanoidRootPart")
+            if hrp then
+                local d = (myHrp.Position - hrp.Position).Magnitude
+                if d < closestDist then
+                    closest, closestDist = p, d
+                end
+            end
+        end
+    end
+    return closest
+end
+
+-- ============================================
+-- ESP
+-- ============================================
+local espData = {}
+
+local function createESP(player)
+    if player == LocalPlayer then return end
+    if espData[player] then return end
+
+    local box = Drawing.new("Square")
+    box.Thickness = 2; box.Filled = false; box.Transparency = 1; box.Color = Config.ESPColor
+
+    local nameTag = Drawing.new("Text")
+    nameTag.Size = 16; nameTag.Center = true; nameTag.Outline = true
+    nameTag.OutlineColor = Color3.fromRGB(0, 0, 0)
+    nameTag.Color = Color3.fromRGB(255, 255, 255)
+    nameTag.Transparency = 1
+
+    local healthBg = Drawing.new("Square")
+    healthBg.Thickness = 1; healthBg.Filled = true
+    healthBg.Color = Color3.fromRGB(30, 30, 30); healthBg.Transparency = 1
+
+    local healthBar = Drawing.new("Square")
+    healthBar.Thickness = 1; healthBar.Filled = true
+    healthBar.Color = Color3.fromRGB(0, 255, 0); healthBar.Transparency = 1
+
+    local distTag = Drawing.new("Text")
+    distTag.Size = 13; distTag.Center = true; distTag.Outline = true
+    distTag.OutlineColor = Color3.fromRGB(0, 0, 0)
+    distTag.Color = Color3.fromRGB(255, 255, 0); distTag.Transparency = 1
+
+    espData[player] = { box=box, nameTag=nameTag, healthBg=healthBg, healthBar=healthBar, distTag=distTag }
+
+    local conn
+    conn = RunService.RenderStepped:Connect(function()
+        local char = player.Character
+        local hideAll = function()
+            box.Visible, nameTag.Visible = false, false
+            healthBg.Visible, healthBar.Visible = false, false
+            distTag.Visible = false
+        end
+
+        if not char or not Config.ESP then hideAll() return end
+        if Config.ESPClosestOnly and getClosestPlayer() ~= player then hideAll() return end
+
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        local head = char:FindFirstChild("Head")
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if not hrp or not head or not hum then hideAll() return end
+
+        local myChar = LocalPlayer.Character
+        local myHrp = myChar and myChar:FindFirstChild("HumanoidRootPart")
+        if myHrp and (myHrp.Position - hrp.Position).Magnitude > Config.ESPRange then hideAll() return end
+
+        local hrpPos, onScreen = Camera:WorldToViewportPoint(hrp.Position)
+        local headPos = Camera:WorldToViewportPoint(head.Position + Vector3.new(0, 1, 0))
+        local feetPos = Camera:WorldToViewportPoint(hrp.Position - Vector3.new(0, 3, 0))
+
+        if onScreen then
+            local height = math.abs(headPos.Y - feetPos.Y)
+            local width = height * 0.6
+            local x = hrpPos.X - width / 2
+            local y = headPos.Y
+
+            box.Size = Vector2.new(width, height)
+            box.Position = Vector2.new(x, y)
+            box.Color = Config.ESPColor
+            box.Visible = true
+
+            nameTag.Text = player.Name
+            nameTag.Position = Vector2.new(hrpPos.X, y - 20)
+            nameTag.Visible = true
+
+            healthBg.Size = Vector2.new(3, height)
+            healthBg.Position = Vector2.new(x - 8, y)
+            healthBg.Visible = true
+
+            local hpRatio = hum.Health / hum.MaxHealth
+            healthBar.Size = Vector2.new(3, height * hpRatio)
+            healthBar.Position = Vector2.new(x - 8, y + (height * (1 - hpRatio)))
+            healthBar.Color = Color3.fromRGB(255 * (1 - hpRatio), 255 * hpRatio, 0)
+            healthBar.Visible = true
+
+            local dist = math.floor((Camera.CFrame.Position - hrp.Position).Magnitude)
+            distTag.Text = dist .. " studs"
+            distTag.Position = Vector2.new(hrpPos.X, y + height + 22)
+            distTag.Visible = true
+        else
+            hideAll()
+        end
+    end)
+
+    espData[player].conn = conn
+end
+
+local function removeESP(player)
+    local d = espData[player]
+    if not d then return end
+    if d.conn then d.conn:Disconnect() end
+    for _, obj in pairs(d) do
+        if typeof(obj) == "userdata" then pcall(function() obj:Remove() end) end
+    end
+    espData[player] = nil
+end
+
+for _, player in ipairs(Players:GetPlayers()) do createESP(player) end
+Players.PlayerAdded:Connect(createESP)
+Players.PlayerRemoving:Connect(removeESP)
+
+-- ============================================
+-- SPEED
+-- ============================================
+local function applySpeed()
+    local char = LocalPlayer.Character
+    if not char then return end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if hum then
+        hum.WalkSpeed = Config.SpeedEnabled and Config.WalkSpeed or 16
+    end
+end
+
+LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(1)
+    applySpeed()
+end)
+
+-- ============================================
+-- NOCLIP + INFINITE JUMP
+-- ============================================
+local noclipConn, infJumpConn
+
+local function startNoclip()
+    if noclipConn then noclipConn:Disconnect() end
+    noclipConn = RunService.Stepped:Connect(function()
+        if not Config.Noclip then return end
+        local char = LocalPlayer.Character
+        if not char then return end
+        for _, p in ipairs(char:GetDescendants()) do
+            if p:IsA("BasePart") then p.CanCollide = false end
+        end
+    end)
+end
+
+local function stopNoclip()
+    if noclipConn then noclipConn:Disconnect() noclipConn = nil end
+end
+
+local function startInfJump()
+    if infJumpConn then infJumpConn:Disconnect() end
+    infJumpConn = UIS.JumpRequest:Connect(function()
+        if not Config.InfJump then return end
+        local char = LocalPlayer.Character
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end
+    end)
+end
+
+local function stopInfJump()
+    if infJumpConn then infJumpConn:Disconnect() infJumpConn = nil end
+end
+
+-- ============================================
+-- UI FEATURES
+-- ============================================
+
+-- Hitbox
+MainTab:CreateSection("Hitbox")
+MainTab:CreateToggle({
+    Name = "Enable Hitbox", CurrentValue = false, Flag = "HBE_Enabled",
+    Callback = function(v) getgenv().HBE = v; playToggle() end,
+})
+MainTab:CreateSlider({
+    Name = "Hitbox Size", Range = {1, 50}, Increment = 1, Suffix = "x",
+    CurrentValue = 15, Flag = "HBE_Size",
+    Callback = function(v) Config.Size = Vector3.new(v, v, v) end,
+})
+MainTab:CreateSlider({
+    Name = "Hitbox Transparency", Range = {0, 1}, Increment = 0.05, Suffix = "",
+    CurrentValue = 0.5, Flag = "HBE_Transparency",
+    Callback = function(v) Config.Transparency = v end,
+})
+MainTab:CreateColorPicker({
+    Name = "Hitbox Color", Color = Config.Color, Flag = "HBE_Color",
+    Callback = function(c) Config.Color = c end,
+})
+MainTab:CreateSection("Filters")
+MainTab:CreateToggle({
+    Name = "Team Check", CurrentValue = false, Flag = "HBE_Team",
+    Callback = function(v) Config.TeamCheck = v; playToggle() end,
+})
+MainTab:CreateToggle({
+    Name = "CanCollide", CurrentValue = false, Flag = "HBE_Collide",
+    Callback = function(v) Config.CanCollide = v; playToggle() end,
+})
+
+-- ESP
+ESPTab:CreateSection("ESP")
+ESPTab:CreateToggle({
+    Name = "Enable ESP", CurrentValue = false, Flag = "ESP_Enabled",
+    Callback = function(v) Config.ESP = v; playToggle() end,
+})
+ESPTab:CreateToggle({
+    Name = "Closest Player Only", CurrentValue = false, Flag = "ESP_Closest",
+    Callback = function(v) Config.ESPClosestOnly = v; playToggle() end,
+})
+ESPTab:CreateSlider({
+    Name = "ESP Range", Range = {50, 2000}, Increment = 10, Suffix = " studs",
+    CurrentValue = 500, Flag = "ESP_Range",
+    Callback = function(v) Config.ESPRange = v end,
+})
+ESPTab:CreateColorPicker({
+    Name = "ESP Color", Color = Config.ESPColor, Flag = "ESP_Color",
+    Callback = function(c) Config.ESPColor = c end,
+})
+ESPTab:CreateSection("Presets")
+ESPTab:CreateButton({Name = "Cyan", Callback = function() Config.ESPColor = Color3.fromRGB(0, 200, 255); playClick() end})
+ESPTab:CreateButton({Name = "Red", Callback = function() Config.ESPColor = Color3.fromRGB(255, 0, 0); playClick() end})
+ESPTab:CreateButton({Name = "Green", Callback = function() Config.ESPColor = Color3.fromRGB(0, 255, 0); playClick() end})
+ESPTab:CreateButton({Name = "Purple", Callback = function() Config.ESPColor = Color3.fromRGB(160, 0, 255); playClick() end})
+ESPTab:CreateButton({Name = "White", Callback = function() Config.ESPColor = Color3.fromRGB(255, 255, 255); playClick() end})
+
+-- Speed
+SpeedTab:CreateSection("Walk Speed")
+SpeedTab:CreateToggle({
+    Name = "Enable Speed", CurrentValue = false, Flag = "Speed_Enabled",
+    Callback = function(v) Config.SpeedEnabled = v; applySpeed(); playToggle() end,
+})
+SpeedTab:CreateSlider({
+    Name = "Walk Speed", Range = {1, 300}, Increment = 1, Suffix = "",
+    CurrentValue = 16, Flag = "WalkSpeed",
+    Callback = function(v)
+        Config.WalkSpeed = v
+        if Config.SpeedEnabled then applySpeed() end
+    end,
+})
+
+-- Movement
+MoveTab:CreateSection("Movement")
+MoveTab:CreateToggle({
+    Name = "Infinite Jump", CurrentValue = false, Flag = "InfJump",
+    Callback = function(v)
+        Config.InfJump = v
+        playToggle()
+        if v then startInfJump() else stopInfJump() end
+    end,
+})
+MoveTab:CreateToggle({
+    Name = "Noclip", CurrentValue = false, Flag = "Noclip",
+    Callback = function(v)
+        Config.Noclip = v
+        playToggle()
+        if v then startNoclip() else stopNoclip() end
+    end,
+})
+
+-- Profile
+ProfileTab:CreateSection("Your Profile")
+ProfileTab:CreateParagraph({
+    Title = LocalPlayer.DisplayName,
+    Content = "@" .. LocalPlayer.Name .. "\nUser ID: " .. LocalPlayer.UserId,
+})
+
+-- Info
+InfoTab:CreateSection("About")
+InfoTab:CreateParagraph({Title = "Universal Hitbox Rayfield", Content = "by iamsad369l"})
+InfoTab:CreateParagraph({Title = "Keybinds",
+    Content = "F = toggle hitbox\nL = toggle ESP"})
+
+-- ============================================
+-- KEYBINDS
+-- ============================================
+UIS.InputBegan:Connect(function(input, gpe)
+    if gpe then return end
+    if input.KeyCode == Enum.KeyCode.F then
+        getgenv().HBE = not getgenv().HBE
+        playToggle()
+    end
+    if input.KeyCode == Enum.KeyCode.L then
+        Config.ESP = not Config.ESP
+        playToggle()
+    end
+end)
+
+-- ============================================
+-- INTRO
+-- ============================================
+task.delay(1, function()
+    local introGui = Instance.new("ScreenGui")
+    introGui.Name = "Intro"
+    introGui.ResetOnSpawn = false
+    introGui.IgnoreGuiInset = true
+    introGui.DisplayOrder = 999
+    introGui.Parent = game:GetService("CoreGui")
+
+    local bg = Instance.new("Frame")
+    bg.Size = UDim2.new(1, 0, 1, 0)
+    bg.BackgroundTransparency = 1
+    bg.Parent = introGui
+
+    local titleLabel = Instance.new("TextLabel")
+    titleLabel.Size = UDim2.new(1, 0, 0, 60)
+    titleLabel.Position = UDim2.new(0, 0, 0.5, -40)
+    titleLabel.BackgroundTransparency = 1
+    titleLabel.Text = "Universal Hitbox Rayfield"
+    titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    titleLabel.Font = Enum.Font.GothamBold
+    titleLabel.TextSize = 42
+    titleLabel.TextTransparency = 1
+    titleLabel.Parent = bg
+
+    local subLabel = Instance.new("TextLabel")
+    subLabel.Size = UDim2.new(1, 0, 0, 30)
+    subLabel.Position = UDim2.new(0, 0, 0.5, 30)
+    subLabel.BackgroundTransparency = 1
+    subLabel.Text = "by iamsad369l"
+    subLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
+    subLabel.Font = Enum.Font.Gotham
+    subLabel.TextSize = 20
+    subLabel.TextTransparency = 1
+    subLabel.Parent = bg
+
+    local TS = game:GetService("TweenService")
+    TS:Create(titleLabel, TweenInfo.new(0.6), {TextTransparency = 0}):Play()
+    TS:Create(subLabel, TweenInfo.new(0.6), {TextTransparency = 0}):Play()
+
+    task.delay(2.5, function()
+        TS:Create(titleLabel, TweenInfo.new(0.6), {TextTransparency = 1}):Play()
+        TS:Create(subLabel, TweenInfo.new(0.6), {TextTransparency = 1}):Play()
+        task.delay(0.7, function() introGui:Destroy() end)
+    end)
+end)
+
+-- ============================================
+-- HITBOX SPOOF HOOK
+-- ============================================
+task.defer(function()
+    pcall(function()
+        local mt = getrawmetatable(game)
+        setreadonly(mt, false)
+        local old = mt.__index
+        mt.__index = function(Self, Key)
+            if tostring(Self) == "HumanoidRootPart" and tostring(Key) == "Size" then
+                return Vector3.new(2, 2, 1)
+            end
+            return old(Self, Key)
+        end
+        setreadonly(mt, true)
+    end)
+end)
